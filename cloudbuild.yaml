@@ -1,0 +1,47 @@
+# Cloud Build configuration file
+steps:
+  # Install dependencies
+  - name: 'node:18-slim'
+    entrypoint: npm
+    args: ['ci']
+
+  # Run tests
+  - name: 'node:18-slim'
+    entrypoint: npm
+    args: ['test']
+
+  # Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${SHORT_SHA}',
+      '.'
+    ]
+
+  # Push Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${SHORT_SHA}'
+    ]
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: [
+      'run',
+      'deploy',
+      '${_SERVICE_NAME}',
+      '--image', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${SHORT_SHA}',
+      '--region', '${_REGION}',
+      '--platform', 'managed',
+      '--allow-unauthenticated'
+    ]
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPOSITORY: cloud-native-guide
+  _IMAGE: app
+  _SERVICE_NAME: cloud-native-guide
+
+options:
+  logging: CLOUD_LOGGING_ONLY
