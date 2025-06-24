@@ -1,29 +1,40 @@
 # Cloud Build configuration file
 steps:
-  # Install dependencies
+  # Install dependencies with caching
   - name: 'node:18-slim'
     entrypoint: npm
     args: ['ci']
+    id: 'install'
+    waitFor: ['-']
 
-  # Run tests
+  # Run tests in CI mode
   - name: 'node:18-slim'
     entrypoint: npm
-    args: ['test']
+    args: ['test', '--ci', '--passWithNoTests']
+    id: 'test'
+    waitFor: ['install']
 
   # Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'build',
+      '--cache-from', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:latest',
       '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${SHORT_SHA}',
+      '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:latest',
       '.'
     ]
+    id: 'build'
+    waitFor: ['test']
 
   # Push Docker image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'push',
-      '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${SHORT_SHA}'
+      '--all-tags',
+      '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}'
     ]
+    id: 'push'
+    waitFor: ['build']
 
   # Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -36,6 +47,8 @@ steps:
       '--platform', 'managed',
       '--allow-unauthenticated'
     ]
+    id: 'deploy'
+    waitFor: ['push']
 
 substitutions:
   _REGION: asia-northeast1
@@ -45,3 +58,7 @@ substitutions:
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  # Set explicit timeout
+  timeout: 1200s
+  # Enable build caching
+  machineType: 'N1_HIGHCPU_8'
